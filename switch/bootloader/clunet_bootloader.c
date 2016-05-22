@@ -1,8 +1,8 @@
 #include "defines.h"
 #include "../defines.h"
 #include "../clunet_config.h"
-#include "clunet.h"
-#include "bits.h"
+#include "../../clunet.h"
+#include "../../bits.h"
 #include <avr/io.h>
 #include <avr/boot.h>
 #include <avr/interrupt.h>
