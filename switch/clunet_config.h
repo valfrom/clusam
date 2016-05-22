@@ -25,7 +25,7 @@
 #define CLUNET_WRITE_PIN 1
 
 /* Using transistor? */
-#define CLUNET_WRITE_TRANSISTOR
+#undef CLUNET_WRITE_TRANSISTOR
 
 /* Pin to receive data, external interrupt required! */
 #define CLUNET_READ_PORT D

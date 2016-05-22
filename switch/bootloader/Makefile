@@ -12,7 +12,7 @@ OBJDUMP        = /Applications/Arduino.app/Contents/Java/hardware/tools/avr/bin/
 CC             = /Applications/Arduino.app/Contents/Java/hardware/tools/avr/bin/avr-gcc
 
 PORT           = `ls /dev/tty.usbmodem*`
-PROGRAMMER     = -cstk500v1 -P $(PROGRAMMER_PORT) -b19200
+PROGRAMMER     = -cstk500v1 -P $(PORT) -b19200
 
 MCU_TARGET     = atmega8
 #MCU_TARGET     = atmega328p
@@ -104,4 +104,4 @@ pdf: $(PRG).pdf
 	$(FIG2DEV) -L png $< $@
 
 program: hex
-	$(AVRDUDE) -V -p $(MCU_PROGRAMMER) $(PROGRAMMER_PARAMS) -U flash:w:$(PRG).hex -U lfuse:w:0x$(LFUSE):m -U hfuse:w:0x$(HFUSE):m
+	$(AVRDUDE) -V -C $(CONF) -p $(MCU_PROGRAMMER) $(PROGRAMMER) -U flash:w:$(PRG).hex -U lfuse:w:0x$(LFUSE):m -U hfuse:w:0x$(HFUSE):m
