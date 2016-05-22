@@ -14,7 +14,7 @@
 #define CLUNET_DEVICE_ID 99
 
 /* Device name */
-#define CLUNET_DEVICE_NAME "CLUNET device"
+#define CLUNET_DEVICE_NAME "SW"
 
 /* Buffer sized (memory usage) */
 #define CLUNET_SEND_BUFFER_SIZE 128

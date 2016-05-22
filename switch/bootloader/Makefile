@@ -3,13 +3,16 @@ OBJ            = clunet_bootloader.o
 LFUSE          = E4
 HFUSE          = DA
 MCU_PROGRAMMER = m8
-PROGRAMMER_PORT = usb
 BOOTSTART = 0x1C00
 
-PORT=`ls /dev/tty.usbmodem*`
-AVRDUDE=/Applications/Arduino.app/Contents/Java/hardware/tools/avr/bin/avrdude
-CONF=/Applications/Arduino.app/Contents/Java/hardware/tools/avr/etc/avrdude.conf
-PROGRAMMER_TYPE=stk500v1 -P $(PORT) -b19200
+AVRDUDE        = /Applications/Arduino.app/Contents/Java/hardware/tools/avr/bin/avrdude
+CONF           = /Applications/Arduino.app/Contents/Java/hardware/tools/avr/etc/avrdude.conf
+OBJCOPY        = /Applications/Arduino.app/Contents/Java/hardware/tools/avr/bin/avr-objcopy
+OBJDUMP        = /Applications/Arduino.app/Contents/Java/hardware/tools/avr/bin/avr-objdump
+CC             = /Applications/Arduino.app/Contents/Java/hardware/tools/avr/bin/avr-gcc
+
+PORT           = `ls /dev/tty.usbmodem*`
+PROGRAMMER     = -cstk500v1 -P $(PROGRAMMER_PORT) -b19200
 
 MCU_TARGET     = atmega8
 #MCU_TARGET     = atmega328p
@@ -19,19 +22,12 @@ OPTIMIZE       = -Os
 DEFS           =
 LIBS           =
 
-# You should not have to change anything below here.
-
-CC             = /Applications/Arduino.app/Contents/Java/hardware/tools/avr/bin/avr-gcc
-
 # Override is only needed by avr-lib build system.
-
 override CFLAGS        = -g -Wall $(OPTIMIZE) -mmcu=$(MCU_TARGET) $(DEFS) -I. -I..
 LDFLAGS       = -Wl,-Map,$(PRG).map
+
 #override LDFLAGS       =  -Wl,--section-start=.text=$(BOOTSTART)
 LDFLAGS += -Wl,--section-start=.text=$(BOOTSTART)
-
-OBJCOPY        = /Applications/Arduino.app/Contents/Java/hardware/tools/avr/bin/avr-objcopy
-OBJDUMP        = /Applications/Arduino.app/Contents/Java/hardware/tools/avr/bin/avr-objdump
 
 all: $(PRG).elf lst text eeprom
 
@@ -108,4 +104,4 @@ pdf: $(PRG).pdf
 	$(FIG2DEV) -L png $< $@
 
 program: hex
-	avrdude -V -p $(MCU_PROGRAMMER) -c $(PROGRAMMER_TYPE) -P $(PROGRAMMER_PORT) -U flash:w:$(PRG).hex -U lfuse:w:0x$(LFUSE):m -U hfuse:w:0x$(HFUSE):m
+	$(AVRDUDE) -V -p $(MCU_PROGRAMMER) $(PROGRAMMER_PARAMS) -U flash:w:$(PRG).hex -U lfuse:w:0x$(LFUSE):m -U hfuse:w:0x$(HFUSE):m
