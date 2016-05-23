@@ -1,3 +1,15 @@
+/**
+Алгоритм работы с бутлоадером такой:
+1) При необходимости посылаем CLUNET_COMMAND_REBOOT, чтобы устройство перезагрузилось в бутлоадер.
+Далее всё взаимодействие идёт через команду CLUNET_COMMAND_BOOT_CONTROL, первый байт в поле данных - код операции.
+2) Устройство посылает CLUNET_COMMAND_BOOT_CONTROL, в данных 0. Так мы узнали, что бутлоадер запустился.
+3) Сразу же посылаем на адрес устройства CLUNET_COMMAND_BOOT_CONTROL, в данных 1. Это переводит устройство в режим прошивки.
+4) Устройство посылает CLUNET_COMMAND_BOOT_CONTROL, первый байт данных - 2, подтверждает, что перешли в режим прошивки. Следующие два байта - это размер страницы.
+5) Посылаем в устройство CLUNET_COMMAND_BOOT_CONTROL, первый байт - 3. Это команда на запись страницы прошивки. Байты с 1го по 4й - это смещение от начала прошивки, все остальные байтики - сам кусок прошивки. Этот кусок должен быть равен размеру страницы, который мы получили в пункте 4 (может и не соответствовать реальному, если реальный слишком большой).
+6) Устройство посылает CLUNET_COMMAND_BOOT_CONTROL, в данных 4 - это подтверждает, что страница прошита. После этого повторяем пункты 5-6, пока не отправим всю прошивку.
+7) Посылаем в устройство CLUNET_COMMAND_BOOT_CONTROL, в данных 7 - это завершает работу бутлоадера и запускает только что прошитый код.
+*/
+
 #include "defines.h"
 #include "../defines.h"
 #include "../clunet_config.h"
@@ -27,6 +39,9 @@
 #define MY_SPM_PAGESIZE SPM_PAGESIZE
 #endif
 
+char update_start_command[7];
+char update_start_command_size;
+
 volatile char update = 0;
 char buffer[MY_SPM_PAGESIZE+0x10];
 static void (*jump_to_app)(void) = 0x0000;
@@ -48,15 +63,15 @@ char check_crc(char* data, unsigned char size) {
       return crc;
 }
 
-void send(char* data, unsigned char size) {
+void send() {
     CLUNET_SEND_0;
-    char crc = check_crc(data, size);
+    char crc = check_crc(update_start_command, update_start_command_size);
     PAUSE(3);
     SEND_BIT(10); // Init
     SEND_BIT(3); SEND_BIT(3);// Prio
     short int i, m;
-    for(i = 0; i <= size; i++) {
-        char b = (i < size) ? data[i] : crc;
+    for(i = 0; i <= update_start_command_size; i++) {
+        char b = (i < update_start_command_size) ? update_start_command[i] : crc;
         for (m = 0; m < 8; m++) {
             CLUNET_SEND_1; 
             short int p = (b & (1<<m)) ? 3 : 1;
@@ -81,9 +96,13 @@ char wait_for_signal() {
 int read() {
     int current_byte = 0, current_bit = 0;
     do {
-        if (!wait_for_signal()) return 0;
+        if (!wait_for_signal()) {
+            return 0;
+        }
         CLUNET_TIMER_REG = 0;
-        while (CLUNET_READING);
+        while (CLUNET_READING) {
+            ;
+        }
     } while (CLUNET_TIMER_REG <  (CLUNET_1_T+ CLUNET_INIT_T)/2);
     
     if (!wait_for_signal()) {
@@ -153,13 +172,26 @@ void write_flash_page(uint32_t address, char* pagebuffer) {
 }
 
 void send_firmware_command(char b) {
-    char update_start_command[5] = {CLUNET_DEVICE_ID,CLUNET_BROADCAST_ADDRESS,CLUNET_COMMAND_BOOT_CONTROL,1,b};
-    send(update_start_command, 5);
+    update_start_command[0] = CLUNET_DEVICE_ID;
+    update_start_command[1] = CLUNET_BROADCAST_ADDRESS;
+    update_start_command[2] = CLUNET_COMMAND_BOOT_CONTROL;
+    update_start_command[3] = 1;
+    update_start_command[4] = b;
+    update_start_command_size = 5;
+    send();
 }
 
 void firmware_update() {
-    char update_start_command[7] = {CLUNET_DEVICE_ID,CLUNET_BROADCAST_ADDRESS,CLUNET_COMMAND_BOOT_CONTROL,3,COMMAND_FIRMWARE_UPDATE_READY,(MY_SPM_PAGESIZE&0xFF),(MY_SPM_PAGESIZE>>8)};
-    send(update_start_command, 7);
+    update_start_command[0] = CLUNET_DEVICE_ID;
+    update_start_command[1] = CLUNET_BROADCAST_ADDRESS;
+    update_start_command[2] = CLUNET_COMMAND_BOOT_CONTROL;
+    update_start_command[3] = 3;
+    update_start_command[4] = COMMAND_FIRMWARE_UPDATE_READY;
+    update_start_command[5] = (MY_SPM_PAGESIZE&0xFF);
+    update_start_command[6] = (MY_SPM_PAGESIZE>>8);
+    update_start_command_size = 7;
+    send();
+
     while(1) {
         int r = read();
         if (r > 0) {
