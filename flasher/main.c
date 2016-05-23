@@ -3,10 +3,23 @@
 #include <termios.h>/* POSIX Terminal Control Definitions*/
 #include <unistd.h> /* UNIX Standard Definitions         */
 #include <string.h>
+#include <stdlib.h>
 
 #define MAX_BUFFER 10000
 
+struct ClunetMsg {
+    unsigned char src_address;
+    unsigned char dst_address;
+    unsigned char command;
+    unsigned char size;
+    unsigned char *data;
+};
+
 unsigned char buf [MAX_BUFFER];
+
+unsigned char fileBuffer[100000];
+long fsize;
+
 int position = 0;
 
 int received = 0;
@@ -81,46 +94,106 @@ void messageReceived(unsigned char src_address, unsigned char dst_address, unsig
     }    
 }
 
-void sendCommand(unsigned char src_address, unsigned char dst_address, unsigned char command, unsigned char size, const unsigned char *data) {
-    printf("<- src: %d dst: %d cmd: %d data: ", src_address, dst_address, command);
-    int len = size + 4;
+void sendCommand(struct ClunetMsg *msg) {
+    printf("<- src: %d dst: %d cmd: %d data: ", msg->src_address, msg->dst_address, msg->command);
+    int len = msg->size + 4;
     unsigned char buffer[len];
 
-    buffer[0] = size;
-    buffer[1] = src_address;
-    buffer[2] = dst_address;
-    buffer[3] = command;
+    buffer[0] = msg->size;
+    buffer[1] = msg->src_address;
+    buffer[2] = msg->dst_address;
+    buffer[3] = msg->command;
 
-    for(int i=0;i<size;i++) {
-        buffer[i+4] = data[i];
-        printf("0x%x ", data[i]);
+    for(int i=0;i<msg->size;i++) {
+        buffer[i+4] = msg->data[i];
+        printf("0x%x ", msg->data[i]);
     }
     printf("%s", "\n");
     int n = write(fd, buffer, len);
     printf("write %d bytes\n", n);
-    usleep ((len + 25) * 100);
+    usleep ((len + 25) * 100); //wait for time enough to transfer
 }
 
-void processBuffer() {
+struct ClunetMsg *processBuffer() {
     
-    while(position > 0 && position >= buf[0] + 4) {
-        unsigned char size = buf[0];
-        unsigned char src_address = buf[1];
-        unsigned char dst_address = buf[2];
-        unsigned char command = buf[3];
-
-        messageReceived(src_address, dst_address, command, size, buf + 4);
-
-        int len = size + 4;
-        for(int i=0;i<position - len;i++) {
-            buf[i] = buf[i+len];
-        }
-        position = position - len;
+    if(position <= 0 || position < buf[0] + 4) {
+        return NULL;
     }
+
+    unsigned char size = buf[0];
+    unsigned char src_address = buf[1];
+    unsigned char dst_address = buf[2];
+    unsigned char command = buf[3];
+
+    struct ClunetMsg *msg = malloc(sizeof(struct ClunetMsg));
+
+    msg->src_address = src_address;
+    msg->dst_address = dst_address;
+    msg->command = command;
+    msg->size = size;
+    msg->data = malloc(size);
+
+    for(int i=0;i<size;i++) {
+        msg->data[i] = buf[i+4];
+    }
+
+    messageReceived(src_address, dst_address, command, size, buf + 4);
+
+    int len = size + 4;
+    for(int i=0;i<position - len;i++) {
+        buf[i] = buf[i+len];
+    }
+    position = position - len;
+    return msg;
+}
+
+struct ClunetMsg *readMessage() {
+    while(1) {
+        int n = read (fd, buf + position, MAX_BUFFER - position);  // read up to 100 characters if ready to read
+
+        // printf("read %d bytes\n", n);
+        
+        if(n > 0) {            
+            position = position + n;
+            struct ClunetMsg *msg = processBuffer();
+
+            if(msg != NULL) {
+                return msg;
+            }
+        }
+        usleep (100);
+    }
+    return NULL;
+}
+
+struct ClunetMsg *waitForMessage(unsigned char src_address, unsigned char command, unsigned char subcommand) {
+    while(1) {
+        struct ClunetMsg *msg = readMessage();
+        if(msg->src_address == src_address && msg->command == command && msg->data[0] == subcommand) {
+            return msg;
+        }
+        if(msg != NULL) {
+            free(msg->data);
+            free(msg);
+        }
+    }
+    return NULL;
+}
+
+void loadFile() {
+    FILE *f = fopen("test.bin", "r");
+    fseek(f, 0, SEEK_END);
+    fsize = ftell(f);
+    printf("File of size %ld loaded..\n", fsize);
+    fseek(f, 0, SEEK_SET);  //same as rewind(f);
+    
+    fread(fileBuffer, fsize, 1, f);
+    fclose(f);    
 }
 
 int main(int argc, char** arg) {
     printf("%s\n", "started..");
+    loadFile();
     char *portname = "/dev/cu.usbmodem1411";
 
     fd = open (portname, O_RDWR | O_NOCTTY | O_SYNC);
@@ -132,31 +205,68 @@ int main(int argc, char** arg) {
     }
 
     set_interface_attribs (fd, B115200, 0);  // set speed to 115,200 bps, 8n1 (no parity)
-    set_blocking (fd, 0);                // set to blocking
+    set_blocking (fd, 0);                // set no blocking
 
-    // write (fd, "hello!\n", 7);           // send 7 character greeting
-
-    // usleep ((7 + 25) * 100);             // sleep enough to transmit the 7 plus
-                                         // receive 25:  approx 100 uS per char transmit
     
-    while(1) {
-        int n = read (fd, buf + position, MAX_BUFFER - position);  // read up to 100 characters if ready to read
+    struct ClunetMsg *msg = waitForMessage(99, 2, 0);
+    if(msg != NULL) {
+        free(msg->data);
+        free(msg);
+    }
 
-        printf("read %d bytes\n", n);
-        
-        if(n > 0) {            
-            position = position + n;
-            processBuffer();
+    unsigned char data[1];
+    data[0] = 1;
 
-            if(received == 1) {
-                received = 2;
-                unsigned char buffer[1];
-                buffer[0] = 1;
-                sendCommand(255, 99, 2, 1, buffer);
-            }
+    struct ClunetMsg m = {255, 99, 2, 1, data};
+    sendCommand(&m);
+
+    msg = waitForMessage(99, 2, 2);
+    int pageSize = msg->data[1] + (msg->data[2] << 8);
+    printf("page size is %d\n", pageSize);
+    if(msg != NULL) {
+        free(msg->data);
+        free(msg);
+    }
+
+    int n = fsize / pageSize + 1;
+
+    for(int i=0;i<n;i++) {
+        unsigned char data[pageSize + 1 + 4];
+        data[0] = 3;
+        int offset = i*pageSize;
+        data[1] = (offset) & 0xFF;
+        data[2] = (offset >> 8) & 0xFF;
+        data[3] = (offset >> 16) & 0xFF;
+        data[4] = (offset >> 24) & 0xFF;
+        for(int j=0;j<pageSize;j++) {
+            data[j + 1 + 4] = fileBuffer[i*pageSize+j];
         }
-        usleep (100);
 
+        struct ClunetMsg m = {255, 99, 2, pageSize+1+4, data};
+        sendCommand(&m);
+
+        msg = waitForMessage(99, 2, 4);
+        if(msg != NULL) {
+            free(msg->data);
+            free(msg);
+        }
+    }
+
+    data[0] = 5;
+
+    struct ClunetMsg m2 = {255, 99, 2, 1, data};
+    sendCommand(&m2);
+
+    msg = waitForMessage(99, 4, 1);
+    if(msg != NULL) {
+        free(msg->data);
+        free(msg);
+    }
+
+    msg = waitForMessage(99, 49, 1);
+    if(msg != NULL) {
+        free(msg->data);
+        free(msg);
     }
 
     return 0;
