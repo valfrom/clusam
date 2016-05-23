@@ -15,7 +15,6 @@
 #include "../clunet_config.h"
 #include "../../clunet.h"
 #include "../../bits.h"
-#include <avr/io.h>
 #include <avr/boot.h>
 #include <avr/interrupt.h>
 
@@ -47,20 +46,21 @@ char buffer[MY_SPM_PAGESIZE+0x10];
 static void (*jump_to_app)(void) = 0x0000;
 
 char check_crc(char* data, unsigned char size) {
-      uint8_t crc=0;
-      uint8_t i,j;
-      for (i=0; i<size;i++) {
-            uint8_t inbyte = data[i];
-            for (j=0;j<8;j++) {
-                  uint8_t mix = (crc ^ inbyte) & 0x01;
-                  crc >>= 1;
-                  if (mix) 
-                        crc ^= 0x8C;
-                  
-                  inbyte >>= 1;
+    uint8_t crc=0;
+    uint8_t i,j;
+    for (i=0; i<size;i++) {
+        uint8_t inbyte = data[i];
+        for (j=0;j<8;j++) {
+            uint8_t mix = (crc ^ inbyte) & 0x01;
+            crc >>= 1;
+            if (mix) {
+                crc ^= 0x8C;
             }
-      }
-      return crc;
+
+            inbyte >>= 1;
+        }
+    }
+    return crc;
 }
 
 void send() {
@@ -75,7 +75,9 @@ void send() {
         for (m = 0; m < 8; m++) {
             CLUNET_SEND_1; 
             short int p = (b & (1<<m)) ? 3 : 1;
-            PAUSE(p); CLUNET_SEND_0; PAUSE(1);
+            PAUSE(p); 
+            CLUNET_SEND_0; 
+            PAUSE(1);
         }
     }   
 }
@@ -84,7 +86,9 @@ char wait_for_signal() {
     int time = 0; 
     CLUNET_TIMER_REG = 0;
     while (time < ((BOOTLOADER_TIMEOUT*CLUNET_T)>>8)) {
-        if (CLUNET_READING) return 1;
+        if (CLUNET_READING) {
+            return 1;
+        }
         if (CLUNET_TIMER_REG >= 254) {
             CLUNET_TIMER_REG = 0;
             time++;
@@ -94,8 +98,9 @@ char wait_for_signal() {
 }
 
 int read() {
-    int current_byte = 0, current_bit = 0;
-    do {
+    int current_byte = 0;
+    int current_bit = 0;
+    while (1) {
         if (!wait_for_signal()) {
             return 0;
         }
@@ -103,7 +108,10 @@ int read() {
         while (CLUNET_READING) {
             ;
         }
-    } while (CLUNET_TIMER_REG <  (CLUNET_1_T+ CLUNET_INIT_T)/2);
+        if(CLUNET_TIMER_REG >= (CLUNET_1_T+ CLUNET_INIT_T)/2) {
+            break;
+        }
+    }
     
     if (!wait_for_signal()) {
         return 0; // Init
@@ -141,7 +149,15 @@ int read() {
         current_byte++;         
     } while (((current_byte < 4) || (current_byte < buffer[CLUNET_OFFSET_SIZE]+CLUNET_OFFSET_DATA+1)) && (current_byte < 512));
 
-    if ((buffer[CLUNET_OFFSET_DST_ADDRESS] == CLUNET_DEVICE_ID) && (check_crc(buffer, current_byte) == 0) && (buffer[CLUNET_OFFSET_COMMAND] == CLUNET_COMMAND_BOOT_CONTROL)) {
+    if(buffer[CLUNET_OFFSET_DST_ADDRESS] != CLUNET_DEVICE_ID) {
+        return -1; // Пришёл пакет, но левый
+    }
+
+    if(check_crc(buffer, current_byte) != 0) {
+        return -1; // Пришёл пакет, но левый
+    }
+
+    if (buffer[CLUNET_OFFSET_COMMAND] == CLUNET_COMMAND_BOOT_CONTROL) {
         return buffer[CLUNET_OFFSET_SIZE];
     }
     return -1; // Пришёл пакет, но левый
@@ -229,6 +245,5 @@ int main (void) {
     }
 
     jump_to_app();
-    //asm("rjmp 0000");
     return 0;
 }
