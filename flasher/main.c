@@ -181,7 +181,7 @@ struct ClunetMsg *waitForMessage(unsigned char src_address, unsigned char comman
 }
 
 void loadFile() {
-    FILE *f = fopen("test.bin", "r");
+    FILE *f = fopen("../switch/clunet-demo.bin", "r");
     fseek(f, 0, SEEK_END);
     fsize = ftell(f);
     printf("File of size %ld loaded..\n", fsize);
