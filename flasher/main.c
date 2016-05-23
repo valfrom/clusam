@@ -9,6 +9,10 @@
 unsigned char buf [MAX_BUFFER];
 int position = 0;
 
+int received = 0;
+
+int fd;
+
 void error_message(char *text, int errno) {
     printf("%s\n", text);
 }
@@ -67,11 +71,34 @@ void set_blocking (int fd, int should_block) {
 }
 
 void messageReceived(unsigned char src_address, unsigned char dst_address, unsigned char command, unsigned char size, const unsigned char *data) {
-    printf("src: %d dst: %d cmd: %d data: ", src_address, dst_address, command);
+    printf("-> src: %d dst: %d cmd: %d data: ", src_address, dst_address, command);
     for(int i=0;i<size;i++) {
         printf("0x%x ", data[i]);
     }
     printf("%s", "\n");
+    if(received == 0) {
+        received = 1;
+    }    
+}
+
+void sendCommand(unsigned char src_address, unsigned char dst_address, unsigned char command, unsigned char size, const unsigned char *data) {
+    printf("<- src: %d dst: %d cmd: %d data: ", src_address, dst_address, command);
+    int len = size + 4;
+    unsigned char buffer[len];
+
+    buffer[0] = size;
+    buffer[1] = src_address;
+    buffer[2] = dst_address;
+    buffer[3] = command;
+
+    for(int i=0;i<size;i++) {
+        buffer[i+4] = data[i];
+        printf("0x%x ", data[i]);
+    }
+    printf("%s", "\n");
+    int n = write(fd, buffer, len);
+    printf("write %d bytes\n", n);
+    usleep ((len + 25) * 100);
 }
 
 void processBuffer() {
@@ -94,9 +121,9 @@ void processBuffer() {
 
 int main(int argc, char** arg) {
     printf("%s\n", "started..");
-    char *portname = "/dev/cu.usbmodem1421";
+    char *portname = "/dev/cu.usbmodem1411";
 
-    int fd = open (portname, O_RDWR | O_NOCTTY | O_SYNC);
+    fd = open (portname, O_RDWR | O_NOCTTY | O_SYNC);
     if (fd < 0) {
         char buffer[100];
         sprintf(buffer, "error opening %s", portname);
@@ -114,10 +141,19 @@ int main(int argc, char** arg) {
     
     while(1) {
         int n = read (fd, buf + position, MAX_BUFFER - position);  // read up to 100 characters if ready to read
+
+        printf("read %d bytes\n", n);
         
         if(n > 0) {            
             position = position + n;
             processBuffer();
+
+            if(received == 1) {
+                received = 2;
+                unsigned char buffer[1];
+                buffer[0] = 1;
+                sendCommand(255, 99, 2, 1, buffer);
+            }
         }
         usleep (100);
 
