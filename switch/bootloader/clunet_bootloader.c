@@ -45,6 +45,7 @@ volatile char update = 0;
 char buffer[MY_SPM_PAGESIZE+0x10];
 static void (*jump_to_app)(void) = 0x0000;
 
+//~60 bytes
 char check_crc(char* data, unsigned char size) {
     uint8_t crc=0;
     uint8_t i,j;
@@ -63,29 +64,35 @@ char check_crc(char* data, unsigned char size) {
     return crc;
 }
 
+//192 bytes
 void send() {
     CLUNET_SEND_0;
     char crc = check_crc(update_start_command, update_start_command_size);
     PAUSE(3);
     SEND_BIT(10); // Init
-    SEND_BIT(3); SEND_BIT(3);// Prio
+    SEND_BIT(3); 
+    SEND_BIT(3);// Prio
     short int i, m;
     for(i = 0; i <= update_start_command_size; i++) {
         char b = (i < update_start_command_size) ? update_start_command[i] : crc;
         for (m = 0; m < 8; m++) {
             CLUNET_SEND_1; 
-            short int p = (b & (1<<m)) ? 3 : 1;
-            PAUSE(p); 
+            if((b & (1<<m))) {
+                PAUSE(3);
+            } else {
+                PAUSE(1);
+            }
             CLUNET_SEND_0; 
             PAUSE(1);
         }
-    }   
+    }
 }
 
+//38 bytes
 char wait_for_signal() {
     int time = 0; 
     CLUNET_TIMER_REG = 0;
-    while (time < ((BOOTLOADER_TIMEOUT*CLUNET_T)>>8)) {
+    while (time < ((BOOTLOADER_TIMEOUT * CLUNET_T)>>8)) {
         if (CLUNET_READING) {
             return 1;
         }
@@ -97,6 +104,7 @@ char wait_for_signal() {
     return 0;
 }
 
+//224 bytes
 int read() {
     int current_byte = 0;
     int current_bit = 0;
@@ -163,6 +171,7 @@ int read() {
     return -1; // Пришёл пакет, но левый
 }
 
+//98 bytes
 void write_flash_page(uint32_t address, char* pagebuffer) {
     eeprom_busy_wait ();
 
@@ -187,6 +196,7 @@ void write_flash_page(uint32_t address, char* pagebuffer) {
     boot_rww_enable ();
 }
 
+// 36 bytes
 void send_firmware_command(char b) {
     update_start_command[0] = CLUNET_DEVICE_ID;
     update_start_command[1] = CLUNET_BROADCAST_ADDRESS;
@@ -197,6 +207,7 @@ void send_firmware_command(char b) {
     send();
 }
 
+//114 bytes
 void firmware_update() {
     update_start_command[0] = CLUNET_DEVICE_ID;
     update_start_command[1] = CLUNET_BROADCAST_ADDRESS;
@@ -230,6 +241,7 @@ void firmware_update() {
     }
 }
 
+//64 bytes
 int main (void) {
     cli();
     CLUNET_TIMER_INIT;
